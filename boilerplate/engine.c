@@ -1,3 +1,20 @@
+/*
+ * engine.c - Supervised Multi-Container Runtime (User Space)
+ *
+ * Intentionally partial starter:
+ *   - command-line shape is defined
+ *   - key runtime data structures are defined
+ *   - bounded-buffer skeleton is defined
+ *   - supervisor / client split is outlined
+ *
+ * Students are expected to design:
+ *   - the control-plane IPC implementation
+ *   - container lifecycle and metadata synchronization
+ *   - clone + namespace setup for each container
+ *   - producer/consumer behavior for log buffering
+ *   - signal handling and graceful shutdown
+ */
+
 #define _GNU_SOURCE
 #include <ctype.h>
 #include <errno.h>
@@ -304,6 +321,15 @@ static int connect_control_socket(void)
 
     return fd;
 }
+
+/*
+ * TODO:
+ * Implement the client-side control request path.
+ *
+ * The CLI commands should use a second IPC mechanism distinct from the
+ * logging pipe. A UNIX domain socket is the most direct option, but a
+ * FIFO or shared memory design is also acceptable if justified.
+ */
 static int send_request_and_receive(const control_request_t *req, client_response_t *resp)
 {
     int fd;
@@ -604,6 +630,15 @@ static void bounded_buffer_begin_shutdown(bounded_buffer_t *buffer)
     pthread_mutex_unlock(&buffer->mutex);
 }
 
+/*
+ * TODO:
+ * Implement producer-side insertion into the bounded buffer.
+ *
+ * Requirements:
+ *   - block or fail according to your chosen policy when the buffer is full
+ *   - wake consumers correctly
+ *   - stop cleanly if shutdown begins
+ */
 static int bounded_buffer_push(bounded_buffer_t *buffer, const log_item_t *item)
 {
     pthread_mutex_lock(&buffer->mutex);
@@ -625,6 +660,15 @@ static int bounded_buffer_push(bounded_buffer_t *buffer, const log_item_t *item)
     return 0;
 }
 
+/*
+ * TODO:
+ * Implement consumer-side removal from the bounded buffer.
+ *
+ * Requirements:
+ *   - wait correctly while the buffer is empty
+ *   - return a useful status when shutdown is in progress
+ *   - avoid races with producers and shutdown
+ */
 static int bounded_buffer_pop(bounded_buffer_t *buffer, log_item_t *item)
 {
     pthread_mutex_lock(&buffer->mutex);
@@ -645,6 +689,7 @@ static int bounded_buffer_pop(bounded_buffer_t *buffer, log_item_t *item)
     pthread_mutex_unlock(&buffer->mutex);
     return 0;
 }
+
 static int register_with_monitor(int monitor_fd,
                                  const char *container_id,
                                  pid_t host_pid,
@@ -677,6 +722,15 @@ static int unregister_from_monitor(int monitor_fd, const char *container_id, pid
     return 0;
 }
 
+/*
+ * TODO:
+ * Implement the logging consumer thread.
+ *
+ * Suggested responsibilities:
+ *   - remove log chunks from the bounded buffer
+ *   - route each chunk to the correct per-container log file
+ *   - exit cleanly when shutdown begins and pending work is drained
+ */
 static void *logging_thread(void *arg)
 {
     supervisor_ctx_t *ctx = (supervisor_ctx_t *)arg;
@@ -730,6 +784,17 @@ static void *log_producer_thread(void *arg)
     return NULL;
 }
 
+/*
+ * TODO:
+ * Implement the clone child entrypoint.
+ *
+ * Required outcomes:
+ *   - isolated PID / UTS / mount context
+ *   - chroot or pivot_root into rootfs
+ *   - working /proc inside container
+ *   - stdout / stderr redirected to the supervisor logging path
+ *   - configured command executed inside the container
+ */
 static int child_fn(void *arg)
 {
     child_config_t *cfg = (child_config_t *)arg;
@@ -1484,6 +1549,17 @@ static void request_stop_for_all(supervisor_ctx_t *ctx, int force)
     pthread_mutex_unlock(&ctx->metadata_lock);
 }
 
+/*
+ * TODO:
+ * Implement the long-running supervisor process.
+ *
+ * Suggested responsibilities:
+ *   - create and bind the control-plane IPC endpoint
+ *   - initialize shared metadata and the bounded buffer
+ *   - start the logging thread
+ *   - accept control requests and update container state
+ *   - reap children and respond to signals
+ */
 static int run_supervisor(const char *base_rootfs)
 {
     supervisor_ctx_t ctx;
@@ -1797,6 +1873,11 @@ static int cmd_ps(void)
         return 1;
     }
 
+    /*
+     * TODO:
+     * The supervisor should respond with container metadata.
+     * Keep the rendering format simple enough for demos and debugging.
+     */
     if (resp.payload && resp.payload[0] != '\0')
         fputs(resp.payload, stdout);
 
