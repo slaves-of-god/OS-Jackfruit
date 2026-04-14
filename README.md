@@ -248,36 +248,13 @@ No monitored device after module unload and process cleanup checks performed.
 ![Teardown process state](Task1/Screenshot%202026-04-15%20004939.png)
 ![Monitor device removed](Task1/Screenshot%202026-04-15%20005200.png)
 
-## 5. Full Screenshot-to-Task Mapping (All Files in `Task1/`)
+## 5. Engineering Analysis
 
-| Screenshot File | Task / Checkpoint Mapping | What It Shows |
-| --- | --- | --- |
-| `Screenshot 2026-04-15 000828.png` | Setup | Base rootfs download/extract and rootfs copy creation |
-| `Screenshot 2026-04-15 001037.png` | Setup | Workload binaries copied into rootfs directories |
-| `Screenshot 2026-04-15 001124.png` | Task 4 setup | `monitor.ko` loaded and `/dev/container_monitor` present |
-| `Screenshot 2026-04-15 001314.png` | Task 1 | Supervisor process started |
-| `Screenshot 2026-04-15 001443.png` | Task 2 | `engine ps` baseline: no containers tracked |
-| `Screenshot 2026-04-15 001533.png` | Task 1 + Task 2 | `start` for two containers and metadata listing |
-| `Screenshot 2026-04-15 002122.png` | Task 2 | `stop` flow with escalation behavior |
-| `Screenshot 2026-04-15 002306.png` | Task 2 + Task 6 | Final stopped state with reason attribution |
-| `Screenshot 2026-04-15 002748.png` | Task 1 + Task 2 | Short-lived probe container and mixed-state `ps` |
-| `Screenshot 2026-04-15 003031.png` | Task 6 | Reaping check (`ps -p <pid>` empty result) |
-| `Screenshot 2026-04-15 003148.png` | Task 3 | Foreground run, log retrieval, and persisted log file |
-| `Screenshot 2026-04-15 003329.png` | Task 4 (soft-limit run) | Soft/hard config test launched (`memory_hog`) |
-| `Screenshot 2026-04-15 003501.png` | Task 4 (hard-limit enforcement) | `hard_limit_killed` reflected in metadata |
-| `Screenshot 2026-04-15 004511.png` | Task 4 support | Kernel log output capture command run |
-| `Screenshot 2026-04-15 004545.png` | Task 5 | Scheduling experiment start (`nice 0` vs `nice 10`) |
-| `Screenshot 2026-04-15 004735.png` | Task 5 | Scheduling timings showing priority impact |
-| `Screenshot 2026-04-15 004939.png` | Task 2 + Task 6 | Final container states and engine process inspection |
-| `Screenshot 2026-04-15 005200.png` | Task 6 | Module unload verified (`/dev/container_monitor` removed) |
-
-## 6. Engineering Analysis
-
-### 6.1 Isolation Mechanisms
+### 5.1 Isolation Mechanisms
 
 Container processes are created with namespace isolation (`PID`, `UTS`, `mount`) and run inside their own rootfs copy via `chroot`. Mounting `/proc` inside each container root ensures process tools operate in that container view. This gives strong process-tree and filesystem view isolation while still sharing the same host kernel, CPU scheduler, and physical memory subsystem.
 
-### 6.2 Supervisor and Process Lifecycle
+### 5.2 Supervisor and Process Lifecycle
 
 The supervisor is a long-running authority for lifecycle state:
 
@@ -288,7 +265,7 @@ The supervisor is a long-running authority for lifecycle state:
 
 This architecture keeps state consistent even with concurrent commands.
 
-### 6.3 IPC, Threads, and Synchronization
+### 5.3 IPC, Threads, and Synchronization
 
 Two different IPC paths are used:
 
@@ -303,7 +280,7 @@ Logging is implemented as a bounded producer-consumer queue:
 
 Without synchronization, races would corrupt queue indices, lose lines, or deadlock under backpressure. The bounded queue design also decouples container write rate from disk write latency.
 
-### 6.4 Memory Management and Enforcement
+### 5.4 Memory Management and Enforcement
 
 The kernel module tracks container host PIDs and periodically samples RSS. Policy is split into:
 
@@ -312,7 +289,7 @@ The kernel module tracks container host PIDs and periodically samples RSS. Polic
 
 Kernel-space enforcement is important because it observes and controls processes with reliable authority, while a pure user-space checker can miss fast spikes or lose races under load. In our run, hard-limit enforcement is visible via `state=hard_limit_killed` and `exit_signal=9`.
 
-### 6.5 Scheduling Behavior
+### 5.5 Scheduling Behavior
 
 Scheduler experiment results:
 
@@ -321,7 +298,7 @@ Scheduler experiment results:
 
 The lower-priority process (`nice 10`) took about `1.322s` longer (roughly 14.3 percent slower in this run). This matches CFS expectations: both tasks make progress, but lower niceness value receives comparatively better CPU share.
 
-## 7. Design Decisions and Tradeoffs
+## 6. Design Decisions and Tradeoffs
 
 - Namespace + `chroot` isolation:
   - Choice: `PID/UTS/mount` namespaces and `chroot` with per-container rootfs.
@@ -343,29 +320,3 @@ The lower-priority process (`nice 10`) took about `1.322s` longer (roughly 14.3 
   - Choice: maintain stop intent (`stop_requested`) in runtime metadata.
   - Tradeoff: ordering between signal send, monitor kill, and reap must be correct.
   - Why chosen: clear grading-visible distinction in `engine ps`.
-
-## 8. Task Coverage Map
-
-- Task 1: Multi-container runtime and supervisor implemented in `boilerplate/engine.c`.
-- Task 2: CLI contract, control IPC, and stop/run handling in `boilerplate/engine.c`.
-- Task 3: Bounded-buffer producer-consumer logging pipeline in `boilerplate/engine.c`.
-- Task 4: Kernel monitor register/unregister + soft/hard enforcement in `boilerplate/monitor.c`.
-- Task 5: Scheduler experiment support (`--nice`) and workload binaries.
-- Task 6: End-to-end cleanup in runtime shutdown, child reaping, and module unload.
-
-## 9. Submission Checklist
-
-Include these in the final submitted repository:
-
-- `boilerplate/engine.c`
-- `boilerplate/monitor.c`
-- `boilerplate/monitor_ioctl.h`
-- Workloads (`boilerplate/cpu_hog.c`, `boilerplate/memory_hog.c`, `boilerplate/io_pulse.c`)
-- `boilerplate/Makefile` with `make` and `make -C boilerplate ci` working
-- `README.md` (this file)
-- `Task1/` screenshot evidence folder
-
-Optional but recommended for grading convenience:
-
-- Keep `project-guide.md` in repo root
-- Keep `.github/workflows/submission-smoke.yml` for CI compile checks
